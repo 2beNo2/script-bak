@@ -1,0 +1,231 @@
+
+
+
+typedef struct {
+    char signature[4] <format=hex, comment = "MagicNumber">;   //".lua"
+    if (Memcmp(signature, "\033Lua", 4) != 0) {
+            Warning("Error signature.");
+    }
+    uchar version <format=hex, comment = "5.2 -> 0x52">;
+    uchar format <comment = "format (0=official)">;
+    uchar endian <comment = "1 == LittleEndian; 0 == BigEndian">;
+    uchar size_int <comment = "sizeof(int)">;
+    uchar size_size_t <comment = "sizeof(size_t)">;
+    uchar size_Instruction <comment = "sizeof(Instruction)">;
+    uchar size_lua_Number <comment = "sizeof(lua_Number)">;
+    uchar lua_num_valid <comment = "Determine lua_Number whether it works or not, It's usually 0">;
+    uchar luac_tail[0x6] <format=hex, comment = "data to catch conversion errors">;
+} GlobalHeader;
+
+
+typedef struct {
+    uint32 linedefined <format=hex>;     // 行信息
+    uint32 lastlinedefined <format=hex>; // 行信息
+    uchar numparams <format=hex>;        // 函数参数个数
+    uchar is_vararg <format=hex>;        // 是否为可变参数列表，1表示是
+    uchar maxstacksize <format=hex>;     // 当前函数的Lua栈大小，值为2的幂
+} ProtoHeader;
+
+
+/*
+** size and position of opcode arguments.
+*/
+#define SIZE_C		9
+#define SIZE_B		9
+#define SIZE_Bx		(SIZE_C + SIZE_B)
+#define SIZE_A		8
+#define SIZE_Ax		(SIZE_C + SIZE_B + SIZE_A)
+#define SIZE_OP		6
+#define POS_OP		0
+#define POS_A		(POS_OP + SIZE_OP)
+#define POS_C		(POS_A + SIZE_A)
+#define POS_B		(POS_C + SIZE_C)
+#define POS_Bx		POS_C
+#define POS_Ax		POS_A
+#define MAXARG_Bx        ((1<<SIZE_Bx)-1)
+#define MAXARG_sBx        (MAXARG_Bx>>1) 
+
+
+
+
+typedef struct  {
+    uint32 sizecode <format=hex>;       // 指令的条数
+    uint32 inst[sizecode] <format=hex>; // 真实指令
+} Code;
+
+
+enum <uchar> LUA_DATATYPE {
+    LUA_TNIL		=     0,
+    LUA_TBOOLEAN	=	  1,
+    LUA_TLIGHTUSERDATA =  2,
+    LUA_TNUMBER		=     3,
+    LUA_TSTRING		=     4,
+    LUA_TTABLE		=     5,
+    LUA_TFUNCTION	=     6,
+    LUA_TUSERDATA	=     7,
+    LUA_TTHREAD		=     8,
+    LUA_NUMTAGS	    =     9,
+
+    LUA_TLCL        =	 (LUA_TFUNCTION | (0 << 4)),  /* Lua closure */
+    LUA_TLCF	    =    (LUA_TFUNCTION | (1 << 4)),  /* light C function */
+    LUA_TCCL	    =    (LUA_TFUNCTION | (2 << 4)),  /* C closure */
+
+    LUA_TSHRSTR	    =   (LUA_TSTRING | (0 << 4)),  /* short strings */
+    LUA_TLNGSTR	    =   (LUA_TSTRING | (1 << 4)),  /* long strings */
+
+    LUA_TNUMFLT	    =   (LUA_TNUMBER | (0 << 4)),  /* float numbers */
+    LUA_TNUMINT     =	 (LUA_TNUMBER | (1 << 4))  /* integer numbers */
+};
+#define LUA_NUMBER	double
+#define LUA_INTEGER	int64 
+typedef LUA_NUMBER  lua_Number;
+typedef LUA_INTEGER lua_Integer;
+typedef struct {
+    int b <format=hex>;           /* booleans */
+    int tt_ <format=hex>;
+} lua_Val;
+
+typedef struct {
+    union Value {
+        //GCObject *gc;               /* collectable objects */
+        //void *p;                    /* light userdata */
+        lua_Val val;                  /* booleans */
+        //lua_CFunction f;            /* light C functions */
+        lua_Integer i <format=hex>;   /* integer numbers */
+        lua_Number n <format=hex>;    /* float numbers */
+    } value_ <optimize=false>;
+} TValue <optimize=false>;
+
+typedef struct {
+    LUA_DATATYPE const_type;  // 常量的Lua数据类型，大小为1个字节
+    if (const_type == LUA_TBOOLEAN) {
+        uchar bool_val;
+
+    } else if (const_type == LUA_TNUMBER) {
+        TValue num_val <format=hex>;
+
+    } else if (const_type == LUA_TSTRING) {
+        if(size_size_t == 8){
+            uint64 string_size <format=hex>;
+            char str_val[string_size];
+        }
+        else{
+            uint32 string_size <format=hex>;
+            char str_val[string_size];
+        }
+
+    } else if (const_type == LUA_TNIL) {
+
+    } else {
+        Warning("need update,const_type:%x\n", const_type);
+    }
+} Constant<optimize=false>;
+
+
+typedef struct {
+    uint32 sizek <format=hex>; // constant的个数
+    Constant constant[sizek];  // Constant常量列表，存放常量信息
+} Constants<optimize=false>;
+
+
+struct Proto;
+
+typedef struct {
+    uint32 sizep;       // 当前函数包含的子函数的数目
+    local uint32 sz = sizep;
+    while (sz-- > 0) {
+        Proto proto;
+    } 
+} Protos <optimize=false>;
+
+typedef struct {
+    uchar instack;   // 否在栈上创建的，是的话取值为1，反之为0
+    uchar idx;       // UpValue在UpValue数据列表中的索引，取值从0开始
+} Upvaldesc;
+
+typedef struct {
+    uint32 sizeupvalues;    // upvaldesc的个数
+    Upvaldesc upvaldesc[sizeupvalues];  // 具体的upvaldesc
+} Upvaldescs <optimize=false>;
+
+typedef struct {
+    if(size_size_t == 8){
+        uint64 src_string_size;     // 字符串的长度
+    }
+    else{
+        uint32 src_string_size;     // 字符串的长度
+    }
+    char str[src_string_size];  // 具体的字符串内容
+} SourceName <optimize=false>;
+
+typedef struct {
+    uint32 sizelineinfo;        // 当前函数所有的行总数目
+    uint32 line[sizelineinfo];  // 存放了具体的行号
+} Lines <optimize=false>;
+
+
+typedef struct {
+    if(size_size_t == 8){
+        uint64 varname_size;         // 变量的名称长度大小
+    }
+    else{
+        uint32 varname_size;         // 变量的名称长度大小
+    }
+    char varname[varname_size];  // 变量的名称字符串内容
+    uint32 startpc;              // 局部变量的作用域信息
+    uint32 endpc;
+} LocVar <optimize=false>;
+
+typedef struct {
+    uint32 sizelocvars;            // 表示局部变量的个数
+    LocVar local_var[sizelocvars]; // 局部变量
+} LocVars <optimize=false>;
+
+typedef struct {
+    if(size_size_t == 8){
+        uint64 name_size;        // 字符串的长度
+    }
+    else{
+        uint32 name_size;        // 字符串的长度
+    }
+    char var_str[name_size]; // 具体的字符串内容
+} UpValueName <optimize=false>;
+
+typedef struct {
+    uint32 size_upvalue_names;                     // 表示UpValueName条目的数目
+    UpValueName upvalue_name[size_upvalue_names];  // UpValue的名称
+} UpValueNames <optimize=false>;
+
+typedef struct {
+    ProtoHeader header;    // header
+    Code code;             // code
+    Constants constants;   // constants
+    Protos protos;         // functions
+    Upvaldescs upvaldescs; // upvalues
+    SourceName src_name;   // string
+    Lines lines;           // lines
+    LocVars loc_vars;      // locals
+    UpValueNames names;    // upvalue names
+} Proto;
+
+typedef struct{
+    GlobalHeader header;
+    Proto proto;
+}Luac;
+
+
+// start
+
+local char endian = ReadByte(6);
+local char size_size_t = ReadByte(8);
+local char size_lua_number = ReadByte(10);
+
+if (endian == 1) {
+    LittleEndian();
+} else if(endian == 0) {
+    BigEndian();
+} else {
+    Warning("Error endian.");
+}
+
+Luac luac;
