@@ -6,24 +6,24 @@ typedef struct {
     if (Memcmp(signature, "\033Lua", 4) != 0) {
             Warning("Error signature.");
     }
-    uchar version <format=hex, comment = "5.2 -> 0x52">;
-    uchar format <comment = "format (0=official)">;
-    uchar endian <comment = "1 == LittleEndian; 0 == BigEndian">;
-    uchar size_int <comment = "sizeof(int)">;
-    uchar size_size_t <comment = "sizeof(size_t)">;
+    uchar version          <format=hex, comment = "5.2 -> 0x52">;
+    uchar format           <comment = "format (0=official)">;
+    uchar endian           <comment = "1 == LittleEndian; 0 == BigEndian">;
+    uchar size_int         <comment = "sizeof(C int)">;
+    uchar size_size_t      <comment = "sizeof(C size_t)">;
     uchar size_Instruction <comment = "sizeof(Instruction)">;
-    uchar size_lua_Number <comment = "sizeof(lua_Number)">;
-    uchar lua_num_valid <comment = "Determine lua_Number whether it works or not, It's usually 0">;
-    uchar luac_tail[0x6] <format=hex, comment = "data to catch conversion errors">;
+    uchar size_lua_Number  <comment = "sizeof(lua_Number)">;
+    uchar lua_num_valid    <comment = "Determine lua_Number whether it works or not, It's usually 0">;
+    uchar luac_tail[0x6]   <format=hex, comment = "data to catch conversion errors">;
 } GlobalHeader;
 
 
 typedef struct {
-    uint32 linedefined <format=hex>;     // 行信息
-    uint32 lastlinedefined <format=hex>; // 行信息
+    uint32 linedefined <format=hex>;     // 函数起始行信息
+    uint32 lastlinedefined <format=hex>; // 函数结束行信息
     uchar numparams <format=hex>;        // 函数参数个数
     uchar is_vararg <format=hex>;        // 是否为可变参数列表，1表示是
-    uchar maxstacksize <format=hex>;     // 当前函数的Lua栈大小，值为2的幂
+    uchar maxstacksize <format=hex>;     // 函数需要寄存器数量
 } ProtoHeader;
 
 
@@ -42,6 +42,7 @@ typedef struct {
 #define POS_B		(POS_C + SIZE_C)
 #define POS_Bx		POS_C
 #define POS_Ax		POS_A
+
 #define MAXARG_Bx        ((1<<SIZE_Bx)-1)
 #define MAXARG_sBx        (MAXARG_Bx>>1) 
 
