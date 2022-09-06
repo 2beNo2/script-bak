@@ -22,46 +22,45 @@ logging.basicConfig(level=logging.INFO,
 
 # 获取块中最后一条pcode
 def getLastPcode(block):
-    pcode = None
+    _pcode = None
     pcode_iterator = block.getIterator()
     while pcode_iterator.hasNext():
-        pcode = pcode_iterator.next()
-    return pcode
+        _pcode = pcode_iterator.next()
+    return _pcode
 
 
 # 获取状态变量
 def getStateVarnode(func, addr):
-    iterator = func.getPcodeOps(addr)
-    pcode = None
+    pcode_iterator = func.getPcodeOps(addr)
+    _pcode = None
 
     # find the pcode for COPYing const
-    while iterator.hasNext():
-        pcode = iterator.next()
-        if pcode.getOpcode() == PcodeOp.COPY and pcode.getInput(0).isConstant():
+    while pcode_iterator.hasNext():
+        _pcode = pcode_iterator.next()
+        if _pcode.getOpcode() == PcodeOp.COPY and _pcode.getInput(0).isConstant():
             break
-    logging.info('COPY const pcode: %s' % pcode)
+    logging.info('COPY const pcode: %s' % _pcode)
 
     # find the state var in phi node
     depth = 0
-    while pcode is not None and pcode.getOpcode() != PcodeOp.MULTIEQUAL:
-        logging.info('finding phi node: %s, depth %d' % (pcode, depth))
-        if pcode.getOutput() is None:
-            logging.warning('output is None in %s' % pcode)
+    while _pcode is not None and _pcode.getOpcode() != PcodeOp.MULTIEQUAL:
+        logging.info('finding phi node: %s, depth %d' % (_pcode, depth))
+        if _pcode.getOutput() is None:
+            logging.warning('output is None in %s' % _pcode)
             break
         # if there is only one PcodeOp taking this varnode as input then return it
-        pcode = pcode.getOutput().getLoneDescend()
+        _pcode = _pcode.getOutput().getLoneDescend()
         if depth > 5:
             break
         depth += 1
 
-    if pcode is None or pcode.getOpcode() != PcodeOp.MULTIEQUAL:
+    if _pcode is None or _pcode.getOpcode() != PcodeOp.MULTIEQUAL:
         logging.warning('cannot find phi node')
         return None
     else:
-        logging.info('phi node: %s' % pcode)
+        logging.info('phi node: %s' % _pcode)
 
-    _stateVarnode = pcode.getOutput()
-    logging.info('state varnode is %s' % _stateVarnode)
+    _stateVarnode = _pcode.getOutput()
     return _stateVarnode
 
 
@@ -77,14 +76,14 @@ def isStateVarnode(stateVar, cmpVar):
             cmpVar = defVar.getInput(0)
     else:
         defVar = cmpVar.getDef()
-        # logging.warning('cmpVar = %s defVar = %s' % (cmpVar, defVar))
+        logging.warning('cmpVar is unknow')
         return False
     return stateVar.getAddress() == cmpVar.getAddress()
 
 
 # 获取状态变量与真实块之间的映射
 def getStateMap(stateVar, blockList):
-    stateMap = {}
+    _stateMap = {}
     for i in range(2, len(blockList)):
         if blockList[i].getOutSize() != 2:
             continue
@@ -124,15 +123,33 @@ def getStateMap(stateVar, blockList):
                 dstBlock = blockList[i].getTrueOut()
             # `<地址空间、偏移量、大小>`
             # logging.info("getOffset  : %s" % constVar.getOffset())
-            stateMap[constVar.getOffset()] = dstBlock
+            _stateMap[constVar.getOffset()] = dstBlock
         else:
             logging.warning(blockList[i])
-            # pcode_iterator = blocks[i].getIterator()
-            # while pcode_iterator.hasNext():
-            #     pcode = pcode_iterator.next()
-            #     logging.info(pcode)
+    return _stateMap
 
-    return stateMap
+
+# 定位状态变量更新的block
+def getStateUpdateMap(stateVar, dispatcherBlock):
+    _stateUpdateMap = {}
+    phiNode = stateVar.getDef()
+    inputList = list(set(phiNode.getInputs()))
+    _count = 1
+    for in0 in inputList:
+        parentBlock = in0.getDef().getParent()
+        if parentBlock == dispatcherBlock:
+            continue
+        # logging.info('%d:input=%s -> block=%s' % (_count, in0, parentBlock))
+        '''
+        block=basic@001251e0 -> 0x674271df
+        block=basic@00125508 -> 0x1acbef86
+        block=basic@00124bf8 -> 0x2c4d620e
+        '''
+        _pcode = in0.getDef().getInput(0).getDef()
+        # logging.info(_pcode)
+        if _pcode.getOpcode() == PcodeOp.COPY and _pcode.getInput(0).isConstant():
+            _stateUpdateMap[_pcode.getInput(0).getOffset()] = parentBlock
+    return _stateUpdateMap
 
 
 if __name__ == '__main__':
@@ -158,10 +175,10 @@ if __name__ == '__main__':
         logging.warning("decompileFunction error : %s" % decompileRes.getErrorMessage())
         exit()
     else:
-        logging.info("currentProgram  : %s" % currentProgram.toString())
-        logging.info("currentAddress  : %s" % currentAddress.toString())
-        logging.info("currentFunction : %s" % currentFunction.toString())
-        logging.info("decompileRes    : %s" % decompileRes.toString())
+        logging.info("currentProgram      : %s" % currentProgram.toString())
+        logging.info("currentAddress      : %s" % currentAddress.toString())
+        logging.info("currentFunction     : %s" % currentFunction.toString())
+        logging.info("decompileRes        : %s" % decompileRes.toString())
         logging.info("currentHighFunction : %s" % currentHighFunction.toString())
 
     '''
@@ -170,19 +187,20 @@ if __name__ == '__main__':
     blocks = currentHighFunction.getBasicBlocks()
     prologueBlock = blocks[0]
     mainDispatcherBlock = blocks[1]
-    logging.info("prologueBlock : %s" % prologueBlock.toString())
+    logging.info("prologueBlock       : %s" % prologueBlock.toString())
     logging.info("mainDispatcherBlock : %s" % mainDispatcherBlock.toString())
 
     '''
     定位状态变量
     COPYing const 只是临时变量
-    pcode遵循SSA，每个变量只能赋值一次，若变量需要多次赋值，则使用phi node进行处理
+    pcode遵循SSA规则，每个变量只能赋值一次，若变量需要多次赋值，则使用phi node进行处理
     MULTIEQUAL 对应 phi node
     '''
     stateVarnode = getStateVarnode(currentHighFunction, currentAddress)
     if not stateVarnode:
         logging.warning("getStateVarnode error!")
         exit()
+    logging.info('[stateVarnode] is %s' % stateVarnode)
 
     '''
     获取状态变量与真实块之间的映射
@@ -193,21 +211,33 @@ if __name__ == '__main__':
         exit()
     count = 1
     for key in stateMap:
-        logging.info('%d:%x -> %s' % (count, key, stateMap[key]))
+        logging.info('[%d]stateMap:const=%08x -> block=%s' % (count, key, stateMap[key]))
         count += 1
 
     '''
-    获取真实块
-    观察CFG，没有预处理器，将后继为主分发器的块都视为真实块
+    定位状态变量更新的block
     '''
-    for i in range(2, len(blocks)):
-        for j in range(blocks[i].getOutSize()):
-            if blocks[i].getOut(j) == mainDispatcherBlock:
-                # if blocks[i].getOutSize() > 1:
-                #     pcode = get_last_pcode(blocks[i])
-                #     logging.info("block : %s, pcode : %s" % (blocks[i].toString(), pcode))
+    stateUpdateMap = getStateUpdateMap(stateVarnode, mainDispatcherBlock)
+    if len(stateUpdateMap) < 1:
+        logging.warning("getStateUpdateMap error!")
+        exit()
+    count = 1
+    for key in stateUpdateMap:
+        logging.info('[%d]stateUpdateMap:const=%08x -> block=%s' % (count, key, stateUpdateMap[key]))
+        count += 1
 
-                pcode_iterator = blocks[i].getIterator()
-                while pcode_iterator.hasNext():
-                    pcode = pcode_iterator.next()
-                    # logging.info(pcode)
+    '''
+    patch代码
+    '''
+    for const in stateUpdateMap:
+        pcode = getLastPcode(stateUpdateMap[const])
+        if pcode.getOpcode() == PcodeOp.BRANCH:
+            dstBlock = None
+            for key in stateMap:
+                if key == const:
+                    dstBlock = stateMap[key]
+                    break
+            if not dstBlock:
+                continue
+            # patch
+
