@@ -75,16 +75,16 @@ def isStateVarnode(stateVar, cmpVar):
         if defVar.getOpcode() == PcodeOp.COPY:
             cmpVar = defVar.getInput(0)
     else:
-        defVar = cmpVar.getDef()
+        # defVar = cmpVar.getDef()
         logging.warning('cmpVar is unknow')
         return False
     return stateVar.getAddress() == cmpVar.getAddress()
 
 
 # 获取状态变量与真实块之间的映射
-def getStateMap(stateVar, blockList):
-    _stateMap = {}
-    for i in range(2, len(blockList)):
+def getConstantBlockMap(stateVar, blockList):
+    _ConstantBlockMap = {}
+    for i in range(0, len(blockList)):
         if blockList[i].getOutSize() != 2:
             continue
 
@@ -111,10 +111,8 @@ def getStateMap(stateVar, blockList):
             constVar = in1
             comparedVar = in0
         else:
-            logging.warning('not const var in %s' % conditionPcode)
+            logging.warning('[getStateMap] not const var in %s' % blockList[i])
             continue
-        # logging.info("lastPcode  : %s" % lastPcode)
-        # logging.info("conditionPcode  : %s" % conditionPcode)
 
         if isStateVarnode(stateVar, comparedVar):
             if conditionType == PcodeOp.INT_NOTEQUAL:
@@ -122,11 +120,13 @@ def getStateMap(stateVar, blockList):
             else:
                 dstBlock = blockList[i].getTrueOut()
             # `<地址空间、偏移量、大小>`
-            # logging.info("getOffset  : %s" % constVar.getOffset())
-            _stateMap[constVar.getOffset()] = dstBlock
+            if dstBlock == blockList[1]:
+                _ConstantBlockMap[constVar.getOffset()] = blockList[i]  # 有些block的dstBlock 是主分发器
+            else:
+                _ConstantBlockMap[constVar.getOffset()] = dstBlock
         else:
             logging.warning(blockList[i])
-    return _stateMap
+    return _ConstantBlockMap
 
 
 # 定位状态变量更新的block
@@ -139,16 +139,12 @@ def getStateUpdateMap(stateVar, dispatcherBlock):
         parentBlock = in0.getDef().getParent()
         if parentBlock == dispatcherBlock:
             continue
-        # logging.info('%d:input=%s -> block=%s' % (_count, in0, parentBlock))
-        '''
-        block=basic@001251e0 -> 0x674271df
-        block=basic@00125508 -> 0x1acbef86
-        block=basic@00124bf8 -> 0x2c4d620e
-        '''
-        _pcode = in0.getDef().getInput(0).getDef()
-        # logging.info(_pcode)
-        if _pcode.getOpcode() == PcodeOp.COPY and _pcode.getInput(0).isConstant():
-            _stateUpdateMap[_pcode.getInput(0).getOffset()] = parentBlock
+        logging.info('%d:input=%s -> block=%s' % (_count, in0, parentBlock))
+        _count += 1
+        # _pcode = in0.getDef().getInput(0).getDef()
+        # # logging.info(_pcode)
+        # if _pcode.getOpcode() == PcodeOp.COPY and _pcode.getInput(0).isConstant():
+        #     _stateUpdateMap[_pcode.getInput(0).getOffset()] = parentBlock
     return _stateUpdateMap
 
 
@@ -205,13 +201,13 @@ if __name__ == '__main__':
     '''
     获取状态变量与真实块之间的映射
     '''
-    stateMap = getStateMap(stateVarnode, blocks)
-    if len(stateMap) < 1:
+    constantBlockMap = getConstantBlockMap(stateVarnode, blocks)
+    if len(constantBlockMap) < 1:
         logging.warning("getStateMap error!")
         exit()
     count = 1
-    for key in stateMap:
-        logging.info('[%d]stateMap:const=%08x -> block=%s' % (count, key, stateMap[key]))
+    for key in constantBlockMap:
+        logging.info('[%d]stateMap:const=%08x -> block=%s' % (count, key, constantBlockMap[key]))
         count += 1
 
     '''
@@ -226,18 +222,19 @@ if __name__ == '__main__':
         logging.info('[%d]stateUpdateMap:const=%08x -> block=%s' % (count, key, stateUpdateMap[key]))
         count += 1
 
+    # FUN_00119cc8
+
     '''
     patch代码
     '''
-    for const in stateUpdateMap:
-        pcode = getLastPcode(stateUpdateMap[const])
-        if pcode.getOpcode() == PcodeOp.BRANCH:
-            dstBlock = None
-            for key in stateMap:
-                if key == const:
-                    dstBlock = stateMap[key]
-                    break
-            if not dstBlock:
-                continue
-            # patch
+    # for const in stateUpdateMap:
+    #     pcode = getLastPcode(stateUpdateMap[const])
+    #     if pcode.getOpcode() == PcodeOp.BRANCH:
+    #         dstBlock = None
+    #         for key in stateMap:
+    #             if key == const:
+    #                 dstBlock = stateMap[key]
+    #                 break
+    #         if not dstBlock:
+    #             continue
 
