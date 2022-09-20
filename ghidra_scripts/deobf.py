@@ -121,31 +121,58 @@ def getConstantBlockMap(stateVar, blockList):
                 dstBlock = blockList[i].getTrueOut()
             # `<地址空间、偏移量、大小>`
             if dstBlock == blockList[1]:
-                _ConstantBlockMap[constVar.getOffset()] = blockList[i]  # 有些block的dstBlock 是主分发器
+                _ConstantBlockMap[blockList[i]] = constVar.getOffset()
+                # _ConstantBlockMap[constVar.getOffset()] = blockList[i]  # 有些block的dstBlock 是主分发器
             else:
-                _ConstantBlockMap[constVar.getOffset()] = dstBlock
+                # _ConstantBlockMap[constVar.getOffset()] = dstBlock
+                _ConstantBlockMap[dstBlock] = constVar.getOffset()
         else:
             logging.warning(blockList[i])
     return _ConstantBlockMap
 
 
 # 定位状态变量更新的block
-def getStateUpdateMap(stateVar, dispatcherBlock):
+def getStateUpdateMap(stateVar):
     _stateUpdateMap = {}
     phiNode = stateVar.getDef()
     inputList = list(set(phiNode.getInputs()))
     _count = 1
     for in0 in inputList:
         parentBlock = in0.getDef().getParent()
-        if parentBlock == dispatcherBlock:
+        _pcode = in0.getDef().getInput(0).getDef()
+        if _pcode.getInput(0).getDef() == stateVar:
             continue
-        logging.info('%d:input=%s -> block=%s' % (_count, in0, parentBlock))
-        _count += 1
-        # _pcode = in0.getDef().getInput(0).getDef()
-        # # logging.info(_pcode)
-        # if _pcode.getOpcode() == PcodeOp.COPY and _pcode.getInput(0).isConstant():
-        #     _stateUpdateMap[_pcode.getInput(0).getOffset()] = parentBlock
+
+        if _pcode.getOpcode() == PcodeOp.COPY and _pcode.getInput(0).isConstant():
+            _stateUpdateMap[parentBlock] = _pcode.getInput(0).getOffset()
     return _stateUpdateMap
+
+
+# value of state var may need to be updated before compared to const
+def constUpdate(const):
+    # signed to unsigned
+    return const & 0xffffffff
+
+
+def gen_cfg(updateMap, constMap):
+    links = []
+    cmovbb = []  # basic blocks for CMOVXX
+
+    for def_block, const in updateMap.items():
+        # unconditional jump
+        link = None
+        if def_block.getOutSize() == 1:
+            for _block, _const in constMap.items():
+                if const == _const:
+                    link = (def_block, constMap[_block])
+                    logging.info('unconditional jump link: %s' % str(link))
+                    links.append(link)
+            if not link:
+                logging.warning('cannot find const 0x%x in const_map' % const)
+
+        elif def_block.getOutSize() == 2:
+            logging.info('conditional jump block: %s' % def_block)
+    pass
 
 
 if __name__ == '__main__':
@@ -207,23 +234,23 @@ if __name__ == '__main__':
         exit()
     count = 1
     for key in constantBlockMap:
-        logging.info('[%d]stateMap:const=%08x -> block=%s' % (count, key, constantBlockMap[key]))
+        logging.info('[%d]stateMap:block=[%s] -> const=[0x%08x]' % (count, key, constantBlockMap[key]))
         count += 1
 
     '''
     定位状态变量更新的block
     '''
-    stateUpdateMap = getStateUpdateMap(stateVarnode, mainDispatcherBlock)
+    stateUpdateMap = getStateUpdateMap(stateVarnode)
     if len(stateUpdateMap) < 1:
         logging.warning("getStateUpdateMap error!")
         exit()
     count = 1
     for key in stateUpdateMap:
-        logging.info('[%d]stateUpdateMap:const=%08x -> block=%s' % (count, key, stateUpdateMap[key]))
+        logging.info('[%d]stateUpdateMap:block=[%s] -> const=[0x%08x]' % (count, key, stateUpdateMap[key]))
         count += 1
 
     # FUN_00119cc8
-
+    gen_cfg(stateUpdateMap, constantBlockMap)
     '''
     patch代码
     '''
@@ -237,4 +264,3 @@ if __name__ == '__main__':
     #                 break
     #         if not dstBlock:
     #             continue
-
