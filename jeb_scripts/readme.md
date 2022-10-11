@@ -1,6 +1,6 @@
 #### 去混淆前：
-	- ![deobf](./demo1/image/before.png)
+	- ![deobf](demo1/image/before.png)
 
 
 #### 去混淆后：
-	- ![wg](./demo1/image/after.png)
+	- ![deobf](demo1/image/after.png)
